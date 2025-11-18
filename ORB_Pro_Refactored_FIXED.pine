@@ -224,6 +224,7 @@ secondCandleOk(bool isLong) =>
             isLong ? (close[1] > orHigh[1] and close[2] <= orHigh[2]) : (close[1] < orLow[1] and close[2] >= orLow[2])
 
 
+
 // ══════════════════════════════════════════════════════════════════════════════
 // STOP LOSS & TAKE PROFIT LEVELS
 // ══════════════════════════════════════════════════════════════════════════════
