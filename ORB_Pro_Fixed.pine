@@ -486,7 +486,7 @@ bgcolor(useTimeFilter and not inWindow ? color.new(color.red, 85) : na)
 bgcolor(stopOnSL and stopLossHitToday ? color.new(color.orange, 90) : na, title="Trading Stopped")
 
 // TP/SL exit labels
-tradeJustClosed = strategy.closedtrades > 0 and strategy.closedtrades != strategy.closedtrades[1]
+// Note: tradeJustClosed already defined above for stop loss detection
 
 var bool showTP = false
 var bool showSL = false
