@@ -77,6 +77,7 @@ slPctInput       = input.float(50, "Base SL % of OR", minval=0.1, step=0.1, grou
 usePartials      = input.bool(true, "Use Partial Take Profit + Runner", group="Stops / Targets / Partials")
 tp1_R            = input.float(1.0, "TP1 at R-multiple", step=0.25, group="Stops / Targets / Partials")
 tp1_qty_pct      = input.int(50, "TP1 Qty %", minval=1, maxval=99, group="Stops / Targets / Partials")
+useTrailingStop  = input.bool(true, "Enable Trailing Stop for Runner", group="Stops / Targets / Partials")
 runnerTrailATR   = input.float(1.5, "Runner ATR Trail (× ATR)", step=0.1, group="Stops / Targets / Partials")
 trailActivate_R  = input.float(0.75, "Activate Runner Trail at R", step=0.25, group="Stops / Targets / Partials")
 
@@ -394,14 +395,15 @@ placeExitsFor(string entryId, bool isLong) =>
                       qty_percent=tp1_qty_pct, comment="TP1/SL",
                       alert_message=(isLong ? MSG_TP1_LONG : MSG_TP1_SHORT))
 
-        // Runner exit: Trail if active, otherwise fixed stop
-        if runnerActive
-            // FIXED: Use trail_points instead of trail_price for proper trailing behavior
+        // Runner exit: Trail if enabled and active, otherwise fixed stop
+        if useTrailingStop and runnerActive
+            // Use trail_points for proper trailing behavior
             strategy.exit(entryId + "-Run", entryId, trail_points=trailPoints, stop=beStop,
                           qty_percent=100 - tp1_qty_pct, comment="Trail SL", alert_message=MSG_RUNNER_SL)
         else
-            strategy.exit(entryId + "-Run", entryId, stop=beStop,
-                          qty_percent=100 - tp1_qty_pct, comment="SL", alert_message=MSG_RUNNER_SL)
+            // Fixed stop (either trailing disabled or not yet activated)
+            strategy.exit(entryId + "-Run", entryId, limit=baseTP, stop=beStop,
+                          qty_percent=100 - tp1_qty_pct, comment="SL/TP", alert_message=MSG_RUNNER_SL)
     else
         // Full position exit
         strategy.exit(entryId + "-Exit", entryId, limit=baseTP, stop=(useBreakeven ? beStop : baseSL),
@@ -497,12 +499,12 @@ plotActiveSlShort = strategy.position_size < 0 and not na(beStopShort) ? beStopS
 plot(plotActiveSlLong, "Active SL Long", color=color.new(color.red, 30), style=plot.style_linebr, linewidth=2)
 plot(plotActiveSlShort, "Active SL Short", color=color.new(color.red, 30), style=plot.style_linebr, linewidth=2)
 
-// NEW: Plot trailing stop when active
+// NEW: Plot trailing stop when active (only if trailing stop is enabled)
 var float trailStopLong = na
 var float trailStopShort = na
 
-// Calculate trailing stop level
-if strategy.position_size > 0 and longTrailActive
+// Calculate trailing stop level only if trailing stop is enabled
+if useTrailingStop and strategy.position_size > 0 and longTrailActive
     trailStopLong := high - trailOffset
     if na(trailStopLong[1])
         trailStopLong := high - trailOffset
@@ -511,7 +513,7 @@ if strategy.position_size > 0 and longTrailActive
 else if strategy.position_size <= 0
     trailStopLong := na
 
-if strategy.position_size < 0 and shortTrailActive
+if useTrailingStop and strategy.position_size < 0 and shortTrailActive
     trailStopShort := low + trailOffset
     if na(trailStopShort[1])
         trailStopShort := low + trailOffset
@@ -571,4 +573,7 @@ plotshape(showSL, "SL", style=shape.labeldown, location=location.abovebar,
 //    - Green solid line: Full TP target
 //    - Lime circles: TP1 (partial) target
 //    - Red translucent line: Active stop loss (includes breakeven)
-//    - Orange line: Trailing stop (when activated)
+//    - Orange line: Trailing stop (when activated and enabled)
+// 9. Trailing stop can be disabled via "Enable Trailing Stop for Runner" input
+//    - When disabled, runner uses fixed TP target instead of trailing
+//    - Useful for testing strategy with/without trailing behavior
