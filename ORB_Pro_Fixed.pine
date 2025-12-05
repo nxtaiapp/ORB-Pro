@@ -479,6 +479,50 @@ plot(useHTFTrend ? htfEMA : na, "HTF EMA", color=color.purple, linewidth=2, styl
 plot(haveOR ? slLong : na, "SL Long", color=color.new(color.red, 0), style=plot.style_linebr)
 plot(haveOR ? slShort : na, "SL Short", color=color.new(color.red, 0), style=plot.style_linebr)
 
+// NEW: Plot take profit levels when in position
+plotTpLong = strategy.position_size > 0 and not na(tpLong) ? tpLong : na
+plotTpShort = strategy.position_size < 0 and not na(tpShort) ? tpShort : na
+plot(plotTpLong, "TP Long", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
+plot(plotTpShort, "TP Short", color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
+
+// NEW: Plot TP1 (partial take profit) levels when in position
+plotTp1Long = strategy.position_size > 0 and usePartials and not na(longTp1) ? longTp1 : na
+plotTp1Short = strategy.position_size < 0 and usePartials and not na(shortTp1) ? shortTp1 : na
+plot(plotTp1Long, "TP1 Long", color=color.new(color.lime, 0), style=plot.style_circles, linewidth=1)
+plot(plotTp1Short, "TP1 Short", color=color.new(color.lime, 0), style=plot.style_circles, linewidth=1)
+
+// NEW: Plot active stop loss (includes breakeven) when in position
+plotActiveSlLong = strategy.position_size > 0 and not na(beStopLong) ? beStopLong : na
+plotActiveSlShort = strategy.position_size < 0 and not na(beStopShort) ? beStopShort : na
+plot(plotActiveSlLong, "Active SL Long", color=color.new(color.red, 30), style=plot.style_linebr, linewidth=2)
+plot(plotActiveSlShort, "Active SL Short", color=color.new(color.red, 30), style=plot.style_linebr, linewidth=2)
+
+// NEW: Plot trailing stop when active
+var float trailStopLong = na
+var float trailStopShort = na
+
+// Calculate trailing stop level
+if strategy.position_size > 0 and longTrailActive
+    trailStopLong := high - trailOffset
+    if na(trailStopLong[1])
+        trailStopLong := high - trailOffset
+    else
+        trailStopLong := math.max(trailStopLong[1], high - trailOffset)
+else if strategy.position_size <= 0
+    trailStopLong := na
+
+if strategy.position_size < 0 and shortTrailActive
+    trailStopShort := low + trailOffset
+    if na(trailStopShort[1])
+        trailStopShort := low + trailOffset
+    else
+        trailStopShort := math.min(trailStopShort[1], low + trailOffset)
+else if strategy.position_size >= 0
+    trailStopShort := na
+
+plot(trailStopLong, "Trail Stop Long", color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=2)
+plot(trailStopShort, "Trail Stop Short", color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=2)
+
 // Background for closed trading windows
 bgcolor(useTimeFilter and not inWindow ? color.new(color.red, 85) : na)
 
@@ -523,3 +567,8 @@ plotshape(showSL, "SL", style=shape.labeldown, location=location.abovebar,
 //    - Resets at day change (detected by dayofweek change)
 //    - Orange background indicates trading is stopped for the day
 //    - Can be disabled via "Stop Trading After Stop Loss Hit" input
+// 8. Visual indicators show live position levels:
+//    - Green solid line: Full TP target
+//    - Lime circles: TP1 (partial) target
+//    - Red translucent line: Active stop loss (includes breakeven)
+//    - Orange line: Trailing stop (when activated)
