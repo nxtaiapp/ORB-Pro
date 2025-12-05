@@ -24,6 +24,7 @@ MSG_FULL_SL      = "FULL SL filled " + ALERT_ID
 MSG_VWAP_EXIT    = "EXIT: VWAP invalidation " + ALERT_ID
 MSG_BREAKEVEN    = "BREAKEVEN TRIGGERED " + ALERT_ID
 MSG_FLAT_4PM     = "Exit all positions at or after 4:00pm New York time"
+MSG_STOP_TRADING = "STOP TRADING: Stop loss hit - done for the day " + ALERT_ID
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INPUTS - Organized by category
@@ -83,6 +84,7 @@ trailActivate_R  = input.float(0.75, "Activate Runner Trail at R", step=0.25, gr
 useBreakeven     = input.bool(true, "Enable Breakeven Stop (one-time)", group="Breakeven / Risk Caps")
 bePctInput       = input.float(75, "BE Trigger % of OR", minval=1, step=1, group="Breakeven / Risk Caps")
 maxLossDollars   = input.float(0, "Max Loss per Trade ($)", minval=0, step=1, group="Breakeven / Risk Caps")
+stopOnSL         = input.bool(true, "Stop Trading After Stop Loss Hit", group="Breakeven / Risk Caps")
 
 // Misc
 enableAlerts     = input.bool(true, "Enable Alerts", group="Misc")
@@ -165,6 +167,16 @@ if na(backtestStartTime) and backtestAuto
 startEffective = backtestAuto ? backtestStartTime : backtestStart
 endEffective = backtestAuto ? timenow : backtestEnd
 inBacktestRange = time >= startEffective and time <= endEffective
+
+// NEW: Stop trading after stop loss tracking
+var bool stopLossHitToday = false
+var int lastSLDay = 0
+
+// Detect new trading day and reset flag
+newDay = ta.change(dayofweek) != 0 or (bar_index == 0)
+if newDay
+    stopLossHitToday := false
+    lastSLDay := dayofmonth
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INDICATORS
@@ -292,13 +304,16 @@ shortFiltersOk = filterParams(false)
 // ══════════════════════════════════════════════════════════════════════════════
 // FINAL SIGNALS
 // ══════════════════════════════════════════════════════════════════════════════
+// NEW: Allow trading only if stop loss hasn't been hit today (when enabled)
+allowTrading = not stopOnSL or not stopLossHitToday
+
 longSignal = longBreakout and validOR and longFiltersOk and vwapSlopeOk and
              inWindow and inBacktestRange and secondCandleOk(true) and entryValidLong and
-             insideDayOk and lowVolOk
+             insideDayOk and lowVolOk and allowTrading
 
 shortSignal = shortBreakout and validOR and shortFiltersOk and vwapSlopeOk and
               inWindow and inBacktestRange and secondCandleOk(false) and entryValidShort and
-              insideDayOk and lowVolOk
+              insideDayOk and lowVolOk and allowTrading
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ENTRIES
@@ -429,6 +444,25 @@ if flat4pm
 
 alertcondition(flat4pm, title="Daily Flat 4pm NY", message=MSG_FLAT_4PM)
 
+// NEW: Detect stop loss hits and stop trading for the day
+tradeJustClosed = strategy.closedtrades > 0 and strategy.closedtrades != strategy.closedtrades[1]
+
+if stopOnSL and tradeJustClosed
+    lastTradeIndex = strategy.closedtrades - 1
+    exitPrice = strategy.closedtrades.exit_price(lastTradeIndex)
+    entryPrice = strategy.closedtrades.entry_price(lastTradeIndex)
+    wasLong = strategy.closedtrades.entry_id(lastTradeIndex) == "Long"
+
+    // Determine if this was a stop loss (losing trade)
+    hitSL = wasLong ? (exitPrice < entryPrice) : (exitPrice > entryPrice)
+
+    if hitSL and not stopLossHitToday
+        stopLossHitToday := true
+        if enableAlerts
+            alert(MSG_STOP_TRADING, alert.freq_once_per_bar_close)
+
+alertcondition(stopLossHitToday, title="Stop Trading - SL Hit", message=MSG_STOP_TRADING)
+
 // ══════════════════════════════════════════════════════════════════════════════
 // VISUAL ELEMENTS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -447,6 +481,9 @@ plot(haveOR ? slShort : na, "SL Short", color=color.new(color.red, 0), style=plo
 
 // Background for closed trading windows
 bgcolor(useTimeFilter and not inWindow ? color.new(color.red, 85) : na)
+
+// NEW: Background for stopped trading (stop loss hit)
+bgcolor(stopOnSL and stopLossHitToday ? color.new(color.orange, 90) : na, title="Trading Stopped")
 
 // TP/SL exit labels
 tradeJustClosed = strategy.closedtrades > 0 and strategy.closedtrades != strategy.closedtrades[1]
@@ -482,3 +519,7 @@ plotshape(showSL, "SL", style=shape.labeldown, location=location.abovebar,
 // 4. VWAP invalidation closes entire position - partials not preserved
 // 5. Max loss override adjusts SL but doesn't reduce position size
 // 6. Minimum OR width set to 5 ticks - adjust MIN_OR_WIDTH_TICKS constant if needed
+// 7. Stop trading after SL feature blocks ALL entries after first losing trade of the day
+//    - Resets at day change (detected by dayofweek change)
+//    - Orange background indicates trading is stopped for the day
+//    - Can be disabled via "Stop Trading After Stop Loss Hit" input
